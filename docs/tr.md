@@ -107,20 +107,21 @@ graph TD
 
   subgraph "Backend"
     Gateway[API Gateway / Realtime]
-
+    Gateway --> SessionDB[("SessionDB<br/>(PostgreSQL)")]
     subgraph "Session Service"
       SessionSvc[Service Logic]
-      SessionDB[(PostgreSQL)]
+      
+      SessionDB[("SessionDB<br/>(PostgreSQL)")]
     end
 
     subgraph "Match Service"
       MatchSvc[Service Logic]
-      MatchDB[(Redis)]
+      MatchDB[("MatchDB<br/>(Redis)")]
     end
 
     subgraph "Recommendation Service"
       RecoSvc[Service Logic]
-      RecoDB[(PostgreSQL)]
+      RecoDB[("MovieDB<br/>(PostgreSQL)")]
     end
   end
 
@@ -195,10 +196,11 @@ sequenceDiagram
 
   Client->>Gateway: GET /movies?session=XYZ123
   Gateway->>RecommendationSvc: Получить список фильмов (session=XYZ123)
-  RecommendationSvc->>SessionSvc: Проверить сессию XYZ123
-  SessionSvc->>SessionDB: SELECT * FROM sessions WHERE code='XYZ123'
-  SessionDB-->>SessionSvc: Сессия действительна
-  SessionSvc-->>RecommendationSvc: Сессия подтверждена
+  Note over Gateway: Gateway проверяет сессию
+  Gateway->>SessionDB: SELECT * FROM sessions WHERE code='XYZ123'
+  SessionDB-->>Gateway: Сессия действительна + данные участников
+  Note over Gateway: Gateway обогащает запрос
+  Gateway->>RecommendationSvc: GET /internal/movies {session_id: 123, user_ids: [1,2,3]}
   RecommendationSvc->>MovieDB: SELECT * FROM movies WHERE доступен=TRUE
   MovieDB-->>RecommendationSvc: Список фильмов
   RecommendationSvc-->>Gateway: Успех, JSON со списком фильмов
@@ -207,10 +209,11 @@ sequenceDiagram
 
 ### Сценарий: Отправка свайпа "Хочу посмотреть сейчас"
 1. Клиент делает свайп "Хочу посмотреть сейчас" и отправляет событие по WebSocket в API Gateway.
-1. API Gateway форвардит событие в Match Service.
-1. Match Service сохраняет голос в MatchDB (Redis).
-1. Match Service проверяет текущее состояние голосований для сессии (все ли участники проголосовали).
-1. Если все участники проголосовали и все голосовали "want_now" → регистрируется совпадение (match): записать результат (в зависимости от политики — в Redis или в долговременную БД) и сформировать payload с информацией о матче (текущий фильм, участники).
+1. API Gateway проверяет валидность сессии в SessionDB (PostgreSQL) и получает данные о сессии (участники, текущий фильм).
+1. API Gateway обогащает запрос и передает его в Match Service с полными данными о сессии. 
+1. Match Service сохраняет голос в MatchDB (Redis), предварительно инициализируя структуру голосования для текущего фильма если необходимо.
+1. Match Service проверяет текущее состояние голосований для сессии, зная всех участников из обогащенного запроса.
+1. Если все участники проголосовали и все голосовали "want_now" → регистрируется совпадение (match): записать результат в Redis и сформировать payload с информацией о матче (текущий фильм, участники).
 1. Match Service отправляет событие match_found в API Gateway.
 1. API Gateway рассылает match_found всем клиентам сессии по WebSocket (включая инициатора).
 
@@ -222,28 +225,35 @@ sequenceDiagram
   participant MatchDB as MatchDB (Redis)
   participant OtherClients as Другие клиенты
 
-  Client->>Gateway: {event: "swipe", value: "want_now"}
-  Gateway->>MatchSvc: swipe (user=A, session=xyz123, value=want_now)
-  MatchSvc->>MatchDB: session:xyz123 user:A "want_now"
-  MatchSvc->>MatchDB: session:xyz123 (проверка голосов)
+  Client->>Gateway: {event: "swipe", session_code: "XYZ123", value: "want_now"}
+  Gateway->>SessionDB: SELECT * FROM sessions WHERE code='XYZ123'
+  SessionDB-->>Gateway: Сессия: id=123, users=[A,B,C], current_movie=456, status=active
+  Note over Gateway: Обогащает запрос: session_id, users, current_movie
+  Gateway->>MatchSvc: swipe {session_id: 123, users: [A,B,C], current_movie: 456, user: A, value: "want_now"}
+  MatchSvc->>MatchDB: EXISTS session:123:movie:456
+  alt Сессия для фильма не существует
+    MatchSvc->>MatchDB: HSET session:123:movie:456 users "A,B,C" movie_id 456 total_users 3
+  end
+  MatchSvc->>MatchDB: HSET session:123:movie:456 vote:A "want_now"
+  MatchSvc->>MatchDB: HGETALL session:123:movie:456
   alt Все участники проголосовали И все == "want_now"
     MatchDB-->>MatchSvc: все голоса получены
     MatchSvc-->>Gateway: event: "match_found", payload:{movie, participants}
     Gateway-->>OtherClients: WSS: {event:"match_found", movie:...}
   else Ожидание остальных голосов
     MatchDB-->>MatchSvc: не все проголосовали
-    MatchSvc-->>Gateway: (при необходимости) WSS: {event:"vote_recorded", user:A}
+     MatchSvc-->>Gateway: WSS: {event:"vote_recorded", user:A, completed: false}
+     Gateway-->>Client: WSS: {event:"vote_ack", status: "recorded"}
   end
 ```
 ### Сценарий: Отправка свайпа "Не хочу смотреть"
 
 1. Клиент делает свайп "Не хочу смотреть" и отправляет событие по WebSocket в API Gateway.
 1. API Gateway передаёт событие в Match Service.
-1. Match Service сохраняет голос в MatchDB (Redis).
-1. Match Service проверяет, собраны ли голоса всех участников.
-1. Если все участники проголосовали:
- - Если все проголосовали "want_now" → (см. сценарий 1) match_found.
- - Иначе (есть хотя бы один "skip") → сессия продолжается без изменений.
+1. Match Service сохраняет голос в MatchDB (Redis) и немедленно инициирует переход к следующему фильму (поскольку наличие хотя бы одного "skip" делает невозможным совпадение для текущего фильма).
+1. Match Service запрашивает следующий фильм у Recommendation Service.
+1. Match Service отправляет событие "next_movie" в API Gateway.
+1. API Gateway рассылает "next_movie" всем клиентам сессии по WebSocket. 
 
 ```mermaid
 sequenceDiagram
@@ -256,23 +266,15 @@ sequenceDiagram
 
   Client->>Gateway: WSS: {event: "swipe", value: "skip"}
   Gateway->>MatchSvc: swipe (user=A, session=xyz123, value=skip)
-  MatchSvc->>MatchDB: HSET session:xyz123 user:A "skip"
-  MatchSvc->>MatchDB: HGETALL session:xyz123 (проверка голосов)
-  alt Все участники проголосовали
-    MatchDB-->>MatchSvc: все голоса получены
-    alt Все == "want_now"
-      MatchSvc-->>Gateway: event: "match_found", payload:{movie, participants}
-      Gateway-->>OtherClients: WSS: {event:"match_found", movie:...}
-    else Есть хотя бы один "skip"
-      MatchSvc->>RecSvc: GET /recommendation/next?session=xyz123
-      RecSvc-->>MatchSvc: next_movie: {...}
-      MatchSvc-->>Gateway: event: "next_movie", payload:{next_movie}
-      Gateway-->>OtherClients: WSS: {event:"next_movie", movie:...}
-    end
-  else Ожидание остальных голосов
-    MatchDB-->>MatchSvc: не все проголосовали
-    MatchSvc-->>Gateway: (при необходимости) WSS: {event:"vote_recorded", user:A}
-  end
+  MatchSvc->>MatchDB: HSET session:123:movie:456 vote:A "skip"
+  Note over MatchSvc: ОПТИМИЗАЦИЯ: skip → сразу следующий фильм
+  MatchSvc->>RecSvc: GET /recommendation/next?session=123&current_movie=456
+  RecSvc-->>MatchSvc: next_movie: 789
+  MatchSvc->>MatchDB: DEL session:123:movie:456
+  MatchSvc-->>Gateway: event: "next_movie", payload: {movie: 789, reason: "skip"}
+  Gateway-->>Client: WSS: {event: "next_movie", movie: 789}
+  Gateway-->>OtherClients: WSS: {event: "next_movie", movie: 789}
+  MatchSvc->>SessionDB: UPDATE sessions SET current_movie=789 WHERE id=123
 ```
 
 ### Сценарий: Восстановление сессии
@@ -325,8 +327,6 @@ sequenceDiagram
 4. Реализация **Match Service** (обработка голосов, логика совпадений).
 5. Реализация **Recommendation Service** (предоставление базовой подборки фильмов).
 6. Интеграция с базами данных (PostgreSQL для сессий и фильмов, Redis для голосов).
-7. Разработка frontend: экраны создания/подключения к сессии, экран голосования.
-8. Реализация WebSocket-клиента на frontend для отправки свайпов и получения обновлений.
 
 **План тестирования:**
 - Модульные тесты для бизнес-логики каждого сервиса (Session, Match).

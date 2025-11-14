@@ -280,15 +280,23 @@ sequenceDiagram
 ### Сценарий: Восстановление сессии
 
 1. Клиент, потерявший соединение, автоматически пытается переподключиться к WebSocket.
-2. При неуспешном переподключении:
-  - делается запрос исключения пользователя на **Session Service** 
-  - участники сессии информируются о данном событии
-2. При успешном переподключении клиент отправляет событие `reconnect` с токеном сессии в API Gateway.
-3. API Gateway направляет запрос на переподключение в **Session Service**.
-4. **Session Service** проверяет валидность сессии и статус пользователя в **SessionDB**.
-5. Если сессия активна, **Session Service** восстанавливает пользователя в сессии и возвращает ему актуальное состояние (например, текущий фильм и результаты голосования).
-6. **Session Service** уведомляет API Gateway об успешном восстановлении.
-7. API Gateway отправляет подтверждение и актуальное состояние сессии клиенту.
+2. API Gateway обнаруживает разрыв соединения и уведомляет Session Service о потере связи с пользователем.
+3. Session Service запускает таймер ожидания переподключения (например, 1 минута) и отслеживает состояние пользователя.
+4.При неуспешном переподключении (таймаут или фатальные ошибки):
+  - Session Service принимает решение об исключении пользователя на основе таймаута и состояния сессии 
+  - Участники сессии информируются о данном событии через API Gateway
+3. При успешном переподключении клиент отправляет событие `reconnect` с токеном сессии в API Gateway.
+4. API Gateway направляет запрос на переподключение в **Session Service**.
+5. **Session Service** проверяет валидность сессии и статус пользователя в **SessionDB**.
+6. Если сессия активна **Session Service**:
+  -Собирает актуальное состояние из различных сервисов:
+    -Базовые метаданные сессии из SessionDB
+    -Текущее состояние голосования из Match Service (который берет данные из Redis)
+    -Информацию о фильмах из Recommendation Service
+  -Восстанавливает пользователя в сессии
+  -Возвращает агрегированное состояние клиенту
+7. **Session Service** уведомляет API Gateway об успешном восстановлении.
+8. API Gateway отправляет подтверждение и актуальное состояние сессии клиенту.
 
 ```mermaid
 sequenceDiagram
@@ -296,14 +304,30 @@ sequenceDiagram
   participant Gateway as API Gateway (Realtime)
   participant SessionSvc as Session Service
   participant SessionDB as SessionDB (PostgreSQL)
+  participant MatchSvc as Match Service
+  participant RecoSvc as Recommendation Service
 
+  Note over Client, Gateway: Обрыв соединения
   Client->>Gateway: Соединение потеряно
+  Gateway->>SessionSvc: notify_connection_lost(user_id, session_id)
+  
+  Note over SessionSvc: Запускает таймер (30 сек) ожидания переподключения
+
   Client->>Gateway: Попытка переподключения (WebSocket)
   Gateway-->>Client: Соединение установлено
   Client->>Gateway: WSS: {event: "reconnect", session_token: "..."}
+
   Gateway->>SessionSvc: Запрос на восстановление
   SessionSvc->>SessionDB: Найти сессию и пользователя
   SessionDB-->>SessionSvc: Сессия активна, пользователь найден
+
+  SessionSvc->>MatchSvc: Получить состояние голосования
+  MatchSvc-->>SessionSvc: Текущие голоса и статус
+  
+  SessionSvc->>RecoSvc: Получить информацию о фильме
+  RecoSvc-->>SessionSvc: Данные текущего фильма
+  
+  SessionSvc->>SessionSvc: Агрегировать состояние сессии
   SessionSvc-->>Gateway: Успех, текущее состояние сессии
   Gateway-->>Client: WSS: {event: "reconnected", state: {...}}
 ```

@@ -107,7 +107,6 @@ graph TD
 
   subgraph "Backend"
     Gateway[API Gateway / Realtime]
-    Gateway --> SessionDB[("SessionDB<br/>(PostgreSQL)")]
     subgraph "Session Service"
       SessionSvc[Service Logic]
       
@@ -129,9 +128,9 @@ graph TD
   ClientB -- "свайпы (WebSocket)" --> Gateway
   ClientC -- "свайпы (WebSocket)" --> Gateway
 
-  Gateway --> SessionSvc
-  Gateway --> MatchSvc
-  Gateway --> RecoSvc
+  Gateway <--> SessionSvc
+  Gateway <--> MatchSvc
+  Gateway <--> RecoSvc
 
   SessionSvc --- SessionDB
   MatchSvc --- MatchDB
@@ -342,7 +341,6 @@ sequenceDiagram
 - Создание и подключение к сессии по коду.
 - Реализация процесса голосования (свайпы) и синхронизация между участниками через WebSocket.
 - Определение совпадения (мэтча), когда все участники голосуют "за".
-- Базовый frontend для отображения карточек фильмов и взаимодействия с пользователем.
 
 **План разработки:**
 1. Проектирование API для сервисов и WebSocket-событий.
@@ -364,7 +362,7 @@ sequenceDiagram
 - Другие пользователи могут подключиться к сессии по коду.
 - Все участники видят одинаковые карточки фильмов и могут голосовать.
 - Система корректно определяет "мэтч" и уведомляет всех участников.
-- Основные компоненты backend и frontend реализованы и интегрированы.
+- Основные компоненты backend реализованы и интегрированы.
 
 ### Расширенный проект (Advanced Scope)
 **Включает:**

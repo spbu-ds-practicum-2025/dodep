@@ -213,3 +213,26 @@ pytest tests/
 Сервис настраивается через переменные окружения:
 
 *   `DATABASE_URL`: URL базы данных (по умолчанию `sqlite:///./sessions.db`)
+
+## Тестирование
+
+Для детальной информации о E2E тестах см. [E2E_TESTING.md](E2E_TESTING.md).
+
+### Запуск тестов
+
+1. Установите зависимости:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Запустите тесты:
+   ```bash
+   python -m pytest tests/test_e2e.py -v
+   ```
+
+3. Для запуска конкретного теста:
+   ```bash
+   python -m pytest tests/test_e2e.py::TestSessionCreation::test_create_session_success -v
+   ```
+
+Все 17 тестов соответствуют плану тестирования из `docs/e2e-testing-plan.md` (Часть 1: Управление сессиями).

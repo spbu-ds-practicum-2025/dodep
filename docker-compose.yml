@@ -29,10 +29,21 @@ services:
       retries: 5
 
   # Services
+  gateway:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - session-service
+      - match-service
+      - recommendation-service
+
   session-service:
     build: ./services/session_service
-    ports:
-      - "8001:8001"
+    # ports:
+    #   - "8001:8001"
     environment:
       - DATABASE_URL=postgresql://user:password@postgres:5432/app_db
       - REDIS_URL=redis://redis:6379/0
@@ -44,12 +55,12 @@ services:
 
   match-service:
     build: ./services/match_service
-    ports:
-      - "8000:8000"
+    # ports:
+    #   - "8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - SESSION_SERVICE_URL=http://session-service:8001
-      - REC_SERVICE_URL=http://recommendation-service:8002
+      - SESSION_SERVICE_URL=http://gateway:80
+      - REC_SERVICE_URL=http://gateway:80
     depends_on:
       redis:
         condition: service_healthy
@@ -58,10 +69,11 @@ services:
 
   recommendation-service:
     build: ./services/recommendation
-    ports:
-      - "8002:8002"
+    # ports:
+    #   - "8002:8002"
     environment:
       - DATABASE_URL=postgresql://user:password@postgres:5432/app_db
+      - SESSION_SERVICE_URL=http://gateway:80
     depends_on:
       postgres:
         condition: service_healthy

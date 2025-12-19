@@ -14,7 +14,7 @@ async def get_next_movie(session_id: str, current_movie_id: str):
                 params={"session": session_id, "current_movie": current_movie_id}
             )
             response.raise_for_status()
-            return response.json().get("movie_id")
+            return response.json().get("id")
         except Exception as e:
             print(f"Error fetching next movie: {e}")
             return None
@@ -30,6 +30,16 @@ async def update_session_movie(session_id: str, next_movie_id: str):
             response.raise_for_status()
         except Exception as e:
             print(f"Error updating session movie: {e}")
+
+async def get_movie_details(movie_id: str):
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{REC_SERVICE_URL}/movies/{movie_id}")
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            print(f"Error fetching movie details: {e}")
+            return None
 
 async def process_swipe(request: SwipeRequest) -> SwipeResponse:
     redis = get_redis_client()
@@ -90,11 +100,14 @@ async def process_swipe(request: SwipeRequest) -> SwipeResponse:
             all_want_now = all(v == "want_now" for v in votes.values())
             
             if all_want_now:
+                movie_details = await get_movie_details(movie_id_str)
+                title = movie_details.get("title", "Unknown Title") if movie_details else "Unknown Title"
+
                 return SwipeResponse(
                     status="match_found",
                     session_id=request.session_id,
                     movie_id=request.movie_id,
-                    matched_movie=MatchedMovie(id=request.movie_id, title="Unknown Title")
+                    matched_movie=MatchedMovie(id=request.movie_id, title=title)
                 )
             else:
                 # If there is a "skip" in votes (race condition or logic), treat as next movie

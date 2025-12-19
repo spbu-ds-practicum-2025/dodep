@@ -69,6 +69,16 @@ async def get_movies(session_code: str = Query(..., alias="session"), db: Sessio
     movies = db.query(models.Movie).filter(models.Movie.is_available == True).all()
     return movies
 
+@app.get("/movies/{movie_id}", response_model=schemas.Movie)
+async def get_movie(movie_id: int, db: Session = Depends(get_db)):
+    """
+    Get a specific movie by ID.
+    """
+    movie = db.query(models.Movie).filter(models.Movie.id == movie_id).first()
+    if not movie:
+        raise HTTPException(status_code=404, detail="Movie not found")
+    return movie
+
 @app.get("/recommendation/next", response_model=schemas.Movie)
 async def get_next_movie(
     session_code: str = Query(..., alias="session"), 

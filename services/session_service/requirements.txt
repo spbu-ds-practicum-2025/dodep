@@ -5,3 +5,4 @@ pydantic
 httpx
 pytest
 python-dotenv
+psycopg2-binary

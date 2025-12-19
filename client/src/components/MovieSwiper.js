@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMovies } from '../services/api'; // We need to ensure this exists or create it
+import { fetchMovies, sendSwipe, getSession } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 
 const MovieSwiper = ({ sessionData, onMatch }) => {
     const [movies, setMovies] = useState([]);
-    const [currentIndex, setCurrentIndex] = useState(0);
+    const [currentMovie, setCurrentMovie] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [waiting, setWaiting] = useState(false);
     const navigate = useNavigate();
 
+    // Load movies
     useEffect(() => {
         const loadMovies = async () => {
             try {
-                // Assuming fetchMovies returns an array of movie objects
-                // You might need to pass sessionId if your API requires it
-                const movieList = await fetchMovies(sessionData?.sessionId); 
+                const movieList = await fetchMovies(sessionData?.sessionId);
                 setMovies(movieList || []);
+                if (movieList && movieList.length > 0) {
+                    // Default to first movie if no current_movie_id yet
+                    setCurrentMovie(movieList[0]);
+                }
             } catch (error) {
                 console.error("Failed to load movies", error);
             } finally {
@@ -22,62 +26,120 @@ const MovieSwiper = ({ sessionData, onMatch }) => {
             }
         };
 
-        loadMovies();
+        if (sessionData?.sessionId) {
+            loadMovies();
+        }
     }, [sessionData]);
 
-    const handleSwipe = (direction) => {
-        const currentMovie = movies[currentIndex];
-        
-        // Logic to send vote to backend would go here
-        // await sendVote(sessionData.sessionId, currentMovie.id, direction === 'right');
+    // Poll session status
+    useEffect(() => {
+        if (!sessionData?.sessionId || movies.length === 0) return;
 
-        console.log(`Swiped ${direction} on ${currentMovie.title}`);
+        const pollSession = async () => {
+            try {
+                const session = await getSession(sessionData.sessionId);
+                
+                if (session.match_movie_id) {
+                    // Use loose comparison (==) to handle potential string/number mismatch
+                    const matchedMovie = movies.find(m => m.id == session.match_movie_id);
+                    if (matchedMovie) {
+                        onMatch(matchedMovie);
+                        navigate('/match');
+                        return;
+                    }
+                }
 
-        if (direction === 'right') {
-            // Check for match logic here or via websocket/polling
-            // For now, let's simulate a match if it's the last movie for demo purposes
-            // onMatch(currentMovie); 
-        }
+                if (session.current_movie_id) {
+                    const movie = movies.find(m => m.id == session.current_movie_id);
+                    if (movie) {
+                        if (currentMovie && movie.id !== currentMovie.id) {
+                            // Movie changed, stop waiting
+                            setWaiting(false);
+                            setCurrentMovie(movie);
+                        } else if (!currentMovie) {
+                            setCurrentMovie(movie);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error("Error polling session:", error);
+            }
+        };
 
-        if (currentIndex < movies.length - 1) {
-            setCurrentIndex(prev => prev + 1);
-        } else {
-            alert("No more movies!");
+        const interval = setInterval(pollSession, 2000);
+        return () => clearInterval(interval);
+    }, [sessionData, movies, currentMovie, onMatch, navigate]);
+
+    const handleSwipe = async (direction) => {
+        if (!currentMovie || waiting) return;
+
+        try {
+            setWaiting(true); // Optimistic waiting
+            const response = await sendSwipe(
+                sessionData.sessionId,
+                currentMovie.id,
+                direction,
+                sessionData.participants
+            );
+
+            console.log("Swipe response:", response);
+
+            if (response.status === 'match_found') {
+                onMatch(currentMovie);
+                navigate('/match');
+            } else if (response.status === 'next_movie') {
+                // Wait for poll to update movie
+                setWaiting(true);
+            } else if (response.status === 'vote_recorded') {
+                setWaiting(true);
+            } else {
+                setWaiting(false); // Error or unknown
+            }
+
+        } catch (error) {
+            console.error("Error sending swipe:", error);
+            setWaiting(false);
         }
     };
 
     if (loading) return <div>Loading movies...</div>;
     if (movies.length === 0) return <div>No movies found for this session.</div>;
-
-    const currentMovie = movies[currentIndex];
+    if (!currentMovie) return <div>Initializing...</div>;
 
     return (
         <div className="swiper-container">
             <div className="movie-card">
-                {currentMovie.posterUrl && (
-                    <img src={currentMovie.posterUrl} alt={currentMovie.title} className="movie-poster" />
+                {currentMovie.poster_url && (
+                    <img src={currentMovie.poster_url} alt={currentMovie.title} className="movie-poster" />
                 )}
                 <h2>{currentMovie.title}</h2>
                 <p>{currentMovie.description}</p>
                 <p>Rating: {currentMovie.rating}</p>
+                <p>Genre: {currentMovie.genre}</p>
+                <p>Duration: {currentMovie.duration_minutes} min</p>
             </div>
 
-            <div className="controls">
-                <button 
-                    className="btn-dislike" 
-                    onClick={() => handleSwipe('left')}
-                    style={{ backgroundColor: '#ff4d4d', marginRight: '10px' }}
-                >
-                    👎 Dislike (Left)
-                </button>
-                <button 
-                    className="btn-like" 
-                    onClick={() => handleSwipe('right')}
-                    style={{ backgroundColor: '#4dff4d' }}
-                >
-                    👍 Like (Right)
-                </button>
-            </div>
+            {waiting ? (
+                <div className="waiting-message">
+                    <h3>Waiting for other participants...</h3>
+                    <div className="spinner"></div>
+                </div>
+            ) : (
+                <div className="swipe-buttons">
+                    <button 
+                        className="swipe-button dislike" 
+                        onClick={() => handleSwipe('left')}
+                    >
+                        👎 Dislike (Left)
+                    </button>
+                    <button 
+                        className="swipe-button like" 
+                        onClick={() => handleSwipe('right')}
+                    >
+                        👍 Like (Right)
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

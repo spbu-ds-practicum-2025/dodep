@@ -31,6 +31,17 @@ async def update_session_movie(session_id: str, next_movie_id: str):
         except Exception as e:
             print(f"Error updating session movie: {e}")
 
+async def update_session_match(session_id: str, match_movie_id: str):
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.put(
+                f"{SESSION_SERVICE_URL}/sessions/{session_id}/match",
+                json={"match_movie_id": match_movie_id}
+            )
+            response.raise_for_status()
+        except Exception as e:
+            print(f"Error updating session match: {e}")
+
 async def get_movie_details(movie_id: str):
     async with httpx.AsyncClient() as client:
         try:
@@ -102,6 +113,9 @@ async def process_swipe(request: SwipeRequest) -> SwipeResponse:
             if all_want_now:
                 movie_details = await get_movie_details(movie_id_str)
                 title = movie_details.get("title", "Unknown Title") if movie_details else "Unknown Title"
+
+                # Update Session Service with the match
+                await update_session_match(session_id_str, movie_id_str)
 
                 return SwipeResponse(
                     status="match_found",

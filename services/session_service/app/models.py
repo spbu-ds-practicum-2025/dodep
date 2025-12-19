@@ -20,6 +20,7 @@ class Session(Base):
     creator_id = Column(String)
     status = Column(Enum(SessionStatus), default=SessionStatus.ACTIVE)
     current_movie_id = Column(Integer, default=None)
+    match_movie_id = Column(Integer, default=None)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

@@ -1,4 +1,4 @@
-const API_BASE_URL = 'https://humble-orbit-4449q57jpqc77px-8080.app.github.dev'; // Replace with your backend URL
+const API_BASE_URL = ''; // Relative path for same-origin
 
 let currentUserId = '';
 
@@ -18,26 +18,28 @@ const getHeaders = () => {
 
 export const createSession = async () => {
     console.log(currentUserId);
-    const response = await fetch(`${API_BASE_URL}/sessions`, {
+    const response = await fetch(`${API_BASE_URL}/sessions/create`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'creator_id': currentUserId,
         },
+        body: JSON.stringify({ creator_id: currentUserId }),
     });
-    return response.json();
+    const data = await response.json();
+    return data.session_code;
 };
 
 export const joinSession = async (sessionId) => {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/join`, {
+    const response = await fetch(`${API_BASE_URL}/sessions/join`, {
         method: 'POST',
         headers: getHeaders(),
+        body: JSON.stringify({ session_code: sessionId, user_id: currentUserId }),
     });
     return response.json();
 };
 
-export const fetchMovies = async () => {
-    const response = await fetch(`${API_BASE_URL}/movies`, {
+export const fetchMovies = async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/movies?session=${sessionId}`, {
         headers: getHeaders(),
     });
     return response.json();
@@ -51,12 +53,33 @@ export const startSession = async (sessionId) => {
     return response.json();
 };
 
-export const getParticipants = async (sessionId) => {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/participants`, {
+export const getSession = async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}`, {
         headers: getHeaders(),
     });
     if (!response.ok) {
-        throw new Error('Failed to fetch participants');
+        throw new Error('Failed to fetch session');
     }
+    return response.json();
+};
+
+export const getParticipants = async (sessionId) => {
+    const data = await getSession(sessionId);
+    return data.participants;
+};
+
+export const sendSwipe = async (sessionId, movieId, direction, participants) => {
+    const swipeValue = direction === 'right' ? 'want_now' : 'skip';
+    const response = await fetch(`${API_BASE_URL}/swipe`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({
+            session_id: sessionId,
+            user_id: currentUserId,
+            movie_id: movieId,
+            swipe_value: swipeValue,
+            participants: participants
+        }),
+    });
     return response.json();
 };

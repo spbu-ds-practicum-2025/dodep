@@ -40,6 +40,7 @@ class Session(SessionBase):
     code: str
     status: str
     current_movie_id: Optional[int] = None
+    match_movie_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     users: List[SessionUser] = []
@@ -54,6 +55,7 @@ class SessionResponse(BaseModel):
     creator_id: str
     status: str
     current_movie_id: Optional[int] = None
+    match_movie_id: Optional[int] = None
     participants: List[str]
     created_at: datetime
 
@@ -74,3 +76,7 @@ class ValidateSessionResponse(BaseModel):
 
 class UpdateMovieRequest(BaseModel):
     current_movie_id: int
+
+
+class UpdateMatchRequest(BaseModel):
+    match_movie_id: int

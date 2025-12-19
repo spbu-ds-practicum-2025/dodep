@@ -46,7 +46,7 @@ async def create_session(request: schemas.SessionCreate, db: Session = Depends(g
     db_session = models.Session(
         code=session_code,
         creator_id=request.creator_id,
-        status=models.SessionStatus.ACTIVE
+        status=models.SessionStatus.WAITING
     )
     db.add(db_session)
     db.flush()
@@ -66,6 +66,7 @@ async def create_session(request: schemas.SessionCreate, db: Session = Depends(g
         creator_id=db_session.creator_id,
         status=db_session.status,
         current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
         participants=[u.user_id for u in db_session.users],
         created_at=db_session.created_at
     )
@@ -116,6 +117,7 @@ async def join_session(request: schemas.SessionJoin, db: Session = Depends(get_d
         creator_id=db_session.creator_id,
         status=db_session.status,
         current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
         participants=[u.user_id for u in db_session.users if u.is_active],
         created_at=db_session.created_at
     )
@@ -166,6 +168,7 @@ async def get_session(session_code: str, db: Session = Depends(get_db)):
         creator_id=db_session.creator_id,
         status=db_session.status,
         current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
         participants=[u.user_id for u in db_session.users if u.is_active],
         created_at=db_session.created_at
     )
@@ -199,6 +202,42 @@ async def update_current_movie(
         creator_id=db_session.creator_id,
         status=db_session.status,
         current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
+        participants=[u.user_id for u in db_session.users if u.is_active],
+        created_at=db_session.created_at
+    )
+
+
+@app.put("/sessions/{session_code}/match", response_model=schemas.SessionResponse)
+async def update_match(
+    session_code: str,
+    request: schemas.UpdateMatchRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Update the match for a session
+    Called by Match Service when a match is found
+    """
+    db_session = db.query(models.Session).filter(
+        models.Session.code == session_code
+    ).first()
+    
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    db_session.match_movie_id = request.match_movie_id
+    db_session.status = models.SessionStatus.COMPLETED
+    db_session.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(db_session)
+    
+    return schemas.SessionResponse(
+        session_id=db_session.id,
+        session_code=db_session.code,
+        creator_id=db_session.creator_id,
+        status=db_session.status,
+        current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
         participants=[u.user_id for u in db_session.users if u.is_active],
         created_at=db_session.created_at
     )
@@ -248,6 +287,50 @@ async def complete_session(session_code: str, db: Session = Depends(get_db)):
     db.commit()
     
     return {"status": "completed", "session_code": session_code}
+
+
+@app.post("/sessions/{session_code}/start", response_model=schemas.SessionResponse)
+async def start_session(session_code: str, db: Session = Depends(get_db)):
+    """
+    Start the session (change status to ACTIVE)
+    """
+    db_session = db.query(models.Session).filter(
+        models.Session.code == session_code
+    ).first()
+    
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    if db_session.status != models.SessionStatus.WAITING:
+        # If already active, just return it
+        if db_session.status == models.SessionStatus.ACTIVE:
+             return schemas.SessionResponse(
+                session_id=db_session.id,
+                session_code=db_session.code,
+                creator_id=db_session.creator_id,
+                status=db_session.status,
+                current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
+                participants=[u.user_id for u in db_session.users if u.is_active],
+                created_at=db_session.created_at
+            )
+        raise HTTPException(status_code=400, detail="Session is not in waiting state")
+        
+    db_session.status = models.SessionStatus.ACTIVE
+    db_session.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(db_session)
+    
+    return schemas.SessionResponse(
+        session_id=db_session.id,
+        session_code=db_session.code,
+        creator_id=db_session.creator_id,
+        status=db_session.status,
+        current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
+        participants=[u.user_id for u in db_session.users if u.is_active],
+        created_at=db_session.created_at
+    )
 
 
 @app.get("/health")

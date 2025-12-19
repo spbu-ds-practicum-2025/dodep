@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createSession, joinSession, getParticipants, startSession } from '../services/api';
+import { createSession, joinSession, getParticipants, startSession, getSession } from '../services/api';
 
 const SessionLobby = ({ onSessionStart }) => {
     const [sessionId, setSessionId] = useState('');
@@ -30,29 +30,36 @@ const SessionLobby = ({ onSessionStart }) => {
         }
     };
 
-    const fetchParticipants = async () => {
-        if (!sessionId) return; // Не делать запрос, если нет ID
+    const checkSessionStatus = async () => {
+        if (!sessionId) return;
         try {
-            const participantsList = await getParticipants(sessionId);
-            setParticipants(participantsList || []);
+            const session = await getSession(sessionId);
+            setParticipants(session.participants || []);
+            
+            if (session.status === 'active' && !isCreator) {
+                 if (onSessionStart) {
+                    onSessionStart({ sessionId, isCreator, participants: session.participants });
+                }
+                navigate('/swipe');
+            }
         } catch (error) {
-            console.error("Error fetching participants:", error);
+            console.error("Error checking session status:", error);
         }
     };
 
     useEffect(() => {
         if (!sessionId) return;
 
-        fetchParticipants(); // Первый запрос сразу
-        const interval = setInterval(fetchParticipants, 2000);
+        checkSessionStatus();
+        const interval = setInterval(checkSessionStatus, 2000);
         return () => clearInterval(interval);
-    }, [sessionId]);
+    }, [sessionId, isCreator]); // Added isCreator to dependencies
 
     const handleStartSession = async () => {
         try {
             await startSession(sessionId);
             if (onSessionStart) {
-                onSessionStart({ sessionId, isCreator });
+                onSessionStart({ sessionId, isCreator, participants });
             }
             // Переход на страницу свайпов
             navigate('/swipe');

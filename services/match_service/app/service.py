@@ -11,7 +11,7 @@ async def get_next_movie(session_id: str, current_movie_id: str):
         try:
             response = await client.get(
                 f"{REC_SERVICE_URL}/recommendation/next",
-                params={"session_id": session_id, "current_movie_id": current_movie_id}
+                params={"session": session_id, "current_movie": current_movie_id}
             )
             response.raise_for_status()
             return response.json().get("movie_id")
@@ -23,8 +23,8 @@ async def update_session_movie(session_id: str, next_movie_id: str):
     async with httpx.AsyncClient() as client:
         try:
             # Assuming Session Service has an endpoint to update the session
-            response = await client.patch(
-                f"{SESSION_SERVICE_URL}/sessions/{session_id}",
+            response = await client.put(
+                f"{SESSION_SERVICE_URL}/sessions/{session_id}/movie",
                 json={"current_movie_id": next_movie_id}
             )
             response.raise_for_status()

@@ -69,7 +69,7 @@ const SessionLobby = ({ onSessionStart }) => {
             {!sessionId ? (
                 <div className="join-controls">
                     <button onClick={handleCreateSession}>Создать новую сессию</button>
-                    <div className="divider">ИЛИ</div>
+                    <div className="divider"></div>
                     <input 
                         type="text" 
                         placeholder="ID сессии" 

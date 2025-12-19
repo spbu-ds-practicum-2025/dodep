@@ -1,10 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 import os
 import string
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from . import models, schemas, database
 
 app = FastAPI(title="Session Service")
@@ -151,9 +151,14 @@ async def validate_session(session_code: str, db: Session = Depends(get_db)):
 
 
 @app.get("/sessions/{session_code}", response_model=schemas.SessionResponse)
-async def get_session(session_code: str, db: Session = Depends(get_db)):
+async def get_session(
+    session_code: str, 
+    user_id: Optional[str] = Header(None), 
+    db: Session = Depends(get_db)
+):
     """
     Get session details by code
+    Also updates last_seen for the calling user and checks for timeouts
     """
     db_session = db.query(models.Session).filter(
         models.Session.code == session_code
@@ -161,6 +166,26 @@ async def get_session(session_code: str, db: Session = Depends(get_db)):
     
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Update last_seen for current user
+    if user_id:
+        current_user = next((u for u in db_session.users if u.user_id == user_id), None)
+        if current_user:
+            current_user.last_seen = datetime.utcnow()
+            current_user.is_active = True
+    
+    # Check for timeouts (40 seconds)
+    timeout_threshold = datetime.utcnow() - timedelta(seconds=40)
+    users_changed = False
+    
+    for user in db_session.users:
+        if user.is_active and user.last_seen and user.last_seen < timeout_threshold:
+            user.is_active = False
+            users_changed = True
+            
+    if user_id or users_changed:
+        db.commit()
+        db.refresh(db_session)
     
     return schemas.SessionResponse(
         session_id=db_session.id,

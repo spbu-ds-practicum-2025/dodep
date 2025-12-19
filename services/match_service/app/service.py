@@ -67,10 +67,18 @@ async def continue_match_session(session_id: str):
             session_resp.raise_for_status()
             session_data = session_resp.json()
             current_movie_id = session_data.get("current_movie_id")
+            match_movie_id = session_data.get("match_movie_id")
+            
+            # If current_movie_id is missing (e.g. first movie match), use match_movie_id
+            if not current_movie_id and match_movie_id:
+                current_movie_id = match_movie_id
             
             if not current_movie_id:
                 # Fallback or error
-                print("No current movie found in session")
+                print(f"No current movie found in session {session_id}. Data: {session_data}")
+                # Try to fetch first movie from Rec Service as a fallback? 
+                # Or just fail gracefully?
+                # Let's try to get ANY movie to start over if we are lost
                 return None
 
             # 2. Get next movie

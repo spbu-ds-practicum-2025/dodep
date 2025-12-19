@@ -150,9 +150,9 @@ const MovieSwiper = ({ sessionData }) => {
             )}
 
             <div className="movie-card">
-                {currentMovie.poster_url && (
+                {/* {currentMovie.poster_url && (
                     <img src={currentMovie.poster_url} alt={currentMovie.title} className="movie-poster" />
-                )}
+                )} */}
                 <h2>{currentMovie.title}</h2>
                 <p>{currentMovie.description}</p>
                 <p>Rating: {currentMovie.rating}</p>

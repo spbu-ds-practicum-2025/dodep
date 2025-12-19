@@ -85,7 +85,8 @@ export const sendSwipe = async (sessionId, movieId, direction, participants) => 
 };
 
 export const continueSession = async (sessionId) => {
-    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/continue`, {
+    // Call Match Service to handle continue logic (get next movie + update session)
+    const response = await fetch(`${API_BASE_URL}/matches/${sessionId}/continue`, {
         method: 'POST',
         headers: getHeaders(),
     });

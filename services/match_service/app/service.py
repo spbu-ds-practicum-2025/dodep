@@ -52,6 +52,46 @@ async def get_movie_details(movie_id: str):
             print(f"Error fetching movie details: {e}")
             return None
 
+async def continue_match_session(session_id: str):
+    """
+    Handle continue session logic:
+    1. Get current session state (to know current movie) - actually we can just ask Rec Service for next movie based on session
+    2. Get next movie from Rec Service
+    3. Update Session Service with next movie and clear match
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            # 1. Get current session to find current_movie_id
+            # We need current_movie_id to ask for next movie
+            session_resp = await client.get(f"{SESSION_SERVICE_URL}/sessions/{session_id}")
+            session_resp.raise_for_status()
+            session_data = session_resp.json()
+            current_movie_id = session_data.get("current_movie_id")
+            
+            if not current_movie_id:
+                # Fallback or error
+                print("No current movie found in session")
+                return None
+
+            # 2. Get next movie
+            next_movie_id = await get_next_movie(session_id, str(current_movie_id))
+            
+            if not next_movie_id:
+                print("No next movie found")
+                return None
+
+            # 3. Update Session Service (continue)
+            response = await client.post(
+                f"{SESSION_SERVICE_URL}/sessions/{session_id}/continue",
+                json={"next_movie_id": next_movie_id}
+            )
+            response.raise_for_status()
+            return response.json()
+
+        except Exception as e:
+            print(f"Error continuing session: {e}")
+            raise e
+
 async def process_swipe(request: SwipeRequest) -> SwipeResponse:
     redis = get_redis_client()
     if not redis:

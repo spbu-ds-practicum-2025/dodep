@@ -9,15 +9,16 @@ import './App.css';
 
 function App() {
   const [sessionData, setSessionData] = useState(null);
-  const [matchedMovie, setMatchedMovie] = useState(null);
   const [userId, setUserIdState] = useState('');
+  const [isUserIdLocked, setIsUserIdLocked] = useState(false);
 
   const handleSessionStart = (data) => {
     setSessionData(data);
+    setIsUserIdLocked(true);
   };
 
-  const handleMatch = (movie) => {
-    setMatchedMovie(movie);
+  const handleSessionJoined = () => {
+    setIsUserIdLocked(true);
   };
 
   const handleUserIdChange = (e) => {
@@ -36,6 +37,7 @@ function App() {
           value={userId} 
           onChange={handleUserIdChange} 
           placeholder="Enter User ID"
+          disabled={isUserIdLocked}
         />
       </div>
       <div className="App">
@@ -43,7 +45,7 @@ function App() {
         <Routes>
           {/* Old syntax: <Route path="/"><SessionLobby /></Route> */}
           {/* New syntax: use 'element' prop */}
-          <Route path="/" element={<SessionLobby onSessionStart={handleSessionStart} />} />
+          <Route path="/" element={<SessionLobby onSessionStart={handleSessionStart} onSessionJoined={handleSessionJoined} />} />
           {/* Добавьте этот маршрут */}
           <Route path="/swipe" element={<MovieSwiper sessionData={sessionData} />} />
           

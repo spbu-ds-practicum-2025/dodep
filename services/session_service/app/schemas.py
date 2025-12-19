@@ -80,3 +80,7 @@ class UpdateMovieRequest(BaseModel):
 
 class UpdateMatchRequest(BaseModel):
     match_movie_id: int
+
+
+class ContinueSessionRequest(BaseModel):
+    next_movie_id: int

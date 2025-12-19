@@ -334,9 +334,13 @@ async def start_session(session_code: str, db: Session = Depends(get_db)):
 
 
 @app.post("/sessions/{session_code}/continue", response_model=schemas.SessionResponse)
-async def continue_session(session_code: str, db: Session = Depends(get_db)):
+async def continue_session(
+    session_code: str, 
+    request: schemas.ContinueSessionRequest,
+    db: Session = Depends(get_db)
+):
     """
-    Continue session after a match (reset match state)
+    Continue session after a match (reset match state and set next movie)
     """
     db_session = db.query(models.Session).filter(
         models.Session.code == session_code
@@ -346,6 +350,7 @@ async def continue_session(session_code: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Session not found")
         
     db_session.match_movie_id = None
+    db_session.current_movie_id = request.next_movie_id
     db_session.status = models.SessionStatus.ACTIVE
     db_session.updated_at = datetime.utcnow()
     db.commit()

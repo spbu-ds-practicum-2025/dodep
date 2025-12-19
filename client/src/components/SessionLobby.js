@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createSession, joinSession, getParticipants, startSession, getSession } from '../services/api';
 
-const SessionLobby = ({ onSessionStart }) => {
+const SessionLobby = ({ onSessionStart, onSessionJoined }) => {
     const [sessionId, setSessionId] = useState('');
     const [inputSessionId, setInputSessionId] = useState(''); // Для поля ввода
     const [participants, setParticipants] = useState([]);
@@ -14,6 +14,7 @@ const SessionLobby = ({ onSessionStart }) => {
             const newSessionId = await createSession();
             setSessionId(newSessionId);
             setIsCreator(true);
+            if (onSessionJoined) onSessionJoined();
         } catch (error) {
             console.error("Error creating session:", error);
         }
@@ -24,6 +25,7 @@ const SessionLobby = ({ onSessionStart }) => {
             try {
                 await joinSession(inputSessionId);
                 setSessionId(inputSessionId);
+                if (onSessionJoined) onSessionJoined();
             } catch (error) {
                 console.error("Error joining session:", error);
             }

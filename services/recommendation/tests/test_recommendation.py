@@ -6,12 +6,30 @@ from app.database import Base
 from app import models
 import pytest
 import os
+import time
 
-# Use file-based SQLite for testing to avoid in-memory sharing issues
-TEST_DB_FILE = "./test_movies.db"
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
+# Use PostgreSQL for testing
+# Ensure this matches docker-compose.yml
+SQLALCHEMY_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL", 
+    "postgresql://user:password@localhost:5432/recommendation_db"
+)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+def get_test_engine(url):
+    retries = 5
+    while retries > 0:
+        try:
+            engine = create_engine(url)
+            with engine.connect() as connection:
+                pass
+            return engine
+        except Exception as e:
+            print(f"Test DB connection failed: {e}. Retrying...")
+            retries -= 1
+            time.sleep(2)
+    raise Exception("Could not connect to the test database")
+
+engine = get_test_engine(SQLALCHEMY_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Ensure tables are created
@@ -36,19 +54,23 @@ def setup_test_data():
     Base.metadata.create_all(bind=engine)
     
     db = TestingSessionLocal()
-    if db.query(models.Movie).count() == 0:
-        movies = [
-            models.Movie(id=1, title="Movie 1", genre="Action", duration_minutes=120, rating=8.0, is_available=True),
-            models.Movie(id=2, title="Movie 2", genre="Comedy", duration_minutes=90, rating=7.5, is_available=True),
-            models.Movie(id=3, title="Movie 3", genre="Drama", duration_minutes=100, rating=8.5, is_available=True),
-        ]
-        db.add_all(movies)
-        db.commit()
+    # Note: id is auto-increment in Postgres usually, but we can force it if needed or let it be generated.
+    # For tests, it's better to let it be generated or be careful.
+    # However, the original test hardcoded IDs.
+    # Postgres sequences might get out of sync if we force IDs, but for a fresh test run it's fine.
+    
+    movies = [
+        models.Movie(title="Movie 1", genre="Action", duration_minutes=120, rating=8.0, is_available=True),
+        models.Movie(title="Movie 2", genre="Comedy", duration_minutes=90, rating=7.5, is_available=True),
+        models.Movie(title="Movie 3", genre="Drama", duration_minutes=100, rating=8.5, is_available=True),
+    ]
+    db.add_all(movies)
+    db.commit()
+    
     db.close()
     yield
     # Cleanup
-    if os.path.exists(TEST_DB_FILE):
-        os.remove(TEST_DB_FILE)
+    Base.metadata.drop_all(bind=engine)
 
 # Mock session check by setting env var
 os.environ["SKIP_SESSION_CHECK"] = "true"

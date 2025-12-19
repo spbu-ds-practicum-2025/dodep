@@ -333,6 +333,65 @@ async def start_session(session_code: str, db: Session = Depends(get_db)):
     )
 
 
+@app.post("/sessions/{session_code}/continue", response_model=schemas.SessionResponse)
+async def continue_session(session_code: str, db: Session = Depends(get_db)):
+    """
+    Continue session after a match (reset match state)
+    """
+    db_session = db.query(models.Session).filter(
+        models.Session.code == session_code
+    ).first()
+    
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    db_session.match_movie_id = None
+    db_session.status = models.SessionStatus.ACTIVE
+    db_session.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(db_session)
+    
+    return schemas.SessionResponse(
+        session_id=db_session.id,
+        session_code=db_session.code,
+        creator_id=db_session.creator_id,
+        status=db_session.status,
+        current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
+        participants=[u.user_id for u in db_session.users if u.is_active],
+        created_at=db_session.created_at
+    )
+
+
+@app.post("/sessions/{session_code}/end", response_model=schemas.SessionResponse)
+async def end_session(session_code: str, db: Session = Depends(get_db)):
+    """
+    End the session
+    """
+    db_session = db.query(models.Session).filter(
+        models.Session.code == session_code
+    ).first()
+    
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    db_session.status = models.SessionStatus.ABANDONED
+    db_session.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(db_session)
+    
+    return schemas.SessionResponse(
+        session_id=db_session.id,
+        session_code=db_session.code,
+        creator_id=db_session.creator_id,
+        status=db_session.status,
+        current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
+        participants=[u.user_id for u in db_session.users if u.is_active],
+        created_at=db_session.created_at
+    )
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}

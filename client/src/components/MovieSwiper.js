@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMovies, sendSwipe, getSession } from '../services/api';
+import { fetchMovies, sendSwipe, getSession, continueSession, endSession } from '../services/api';
 import { useNavigate } from 'react-router-dom';
+import MatchModal from './MatchModal';
 
-const MovieSwiper = ({ sessionData, onMatch }) => {
+const MovieSwiper = ({ sessionData }) => {
     const [movies, setMovies] = useState([]);
     const [currentMovie, setCurrentMovie] = useState(null);
     const [loading, setLoading] = useState(true);
     const [waiting, setWaiting] = useState(false);
+    const [matchedMovie, setMatchedMovie] = useState(null);
+    const [showMatchModal, setShowMatchModal] = useState(false);
     const navigate = useNavigate();
 
     // Load movies
@@ -43,10 +46,20 @@ const MovieSwiper = ({ sessionData, onMatch }) => {
                     // Use loose comparison (==) to handle potential string/number mismatch
                     const matchedMovie = movies.find(m => m.id == session.match_movie_id);
                     if (matchedMovie) {
-                        onMatch(matchedMovie);
-                        navigate('/match');
-                        return;
+                        setMatchedMovie(matchedMovie);
+                        setShowMatchModal(true);
                     }
+                } else {
+                    // If match was cleared (by creator continuing), hide modal
+                    if (showMatchModal) {
+                        setShowMatchModal(false);
+                        setMatchedMovie(null);
+                    }
+                }
+
+                if (session.status === 'abandoned') {
+                    navigate('/');
+                    return;
                 }
 
                 if (session.current_movie_id) {
@@ -68,7 +81,7 @@ const MovieSwiper = ({ sessionData, onMatch }) => {
 
         const interval = setInterval(pollSession, 2000);
         return () => clearInterval(interval);
-    }, [sessionData, movies, currentMovie, onMatch, navigate]);
+    }, [sessionData, movies, currentMovie, showMatchModal, navigate]);
 
     const handleSwipe = async (direction) => {
         if (!currentMovie || waiting) return;
@@ -85,8 +98,8 @@ const MovieSwiper = ({ sessionData, onMatch }) => {
             console.log("Swipe response:", response);
 
             if (response.status === 'match_found') {
-                onMatch(currentMovie);
-                navigate('/match');
+                setMatchedMovie(currentMovie);
+                setShowMatchModal(true);
             } else if (response.status === 'next_movie') {
                 // Wait for poll to update movie
                 setWaiting(true);
@@ -102,12 +115,40 @@ const MovieSwiper = ({ sessionData, onMatch }) => {
         }
     };
 
+    const handleContinue = async () => {
+        try {
+            await continueSession(sessionData.sessionId);
+            setShowMatchModal(false);
+            setMatchedMovie(null);
+        } catch (error) {
+            console.error("Error continuing session:", error);
+        }
+    };
+
+    const handleEndSession = async () => {
+        try {
+            await endSession(sessionData.sessionId);
+            navigate('/');
+        } catch (error) {
+            console.error("Error ending session:", error);
+        }
+    };
+
     if (loading) return <div>Loading movies...</div>;
     if (movies.length === 0) return <div>No movies found for this session.</div>;
     if (!currentMovie) return <div>Initializing...</div>;
 
     return (
         <div className="swiper-container">
+            {showMatchModal && (
+                <MatchModal 
+                    movie={matchedMovie} 
+                    isCreator={sessionData?.isCreator}
+                    onContinue={handleContinue}
+                    onEndSession={handleEndSession}
+                />
+            )}
+
             <div className="movie-card">
                 {currentMovie.poster_url && (
                     <img src={currentMovie.poster_url} alt={currentMovie.title} className="movie-poster" />

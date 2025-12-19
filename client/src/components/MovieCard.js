@@ -8,7 +8,7 @@ const MovieCard = ({ movie, onSwipe }) => {
 
     return (
         <div className="movie-card">
-            <img src={movie.poster} alt={movie.title} className="movie-poster" />
+            {/* <img src={movie.poster} alt={movie.title} className="movie-poster" /> */}
             <h3 className="movie-title">{movie.title}</h3>
             <p className="movie-description">{movie.description}</p>
             <div className="swipe-buttons">

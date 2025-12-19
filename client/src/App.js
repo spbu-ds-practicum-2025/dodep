@@ -45,8 +45,7 @@ function App() {
           {/* New syntax: use 'element' prop */}
           <Route path="/" element={<SessionLobby onSessionStart={handleSessionStart} />} />
           {/* Добавьте этот маршрут */}
-          <Route path="/swipe" element={<MovieSwiper sessionData={sessionData} onMatch={handleMatch} />} />
-          <Route path="/match" element={<MatchModal movie={matchedMovie} />} />
+          <Route path="/swipe" element={<MovieSwiper sessionData={sessionData} />} />
           
           {/* Add other routes similarly */}
           {/* <Route path="/swipe" element={<MovieSwiper />} /> */}

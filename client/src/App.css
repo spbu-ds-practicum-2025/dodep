@@ -247,3 +247,34 @@ button:active {
     padding: 8px;
     margin: 0;
 }
+
+.match-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 1.5rem;
+}
+
+.btn-continue {
+    background-color: var(--secondary-color);
+    color: #000;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn-end {
+    background-color: var(--error-color);
+    color: #fff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn-continue:hover, .btn-end:hover {
+    opacity: 0.9;
+}

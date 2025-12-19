@@ -83,3 +83,19 @@ export const sendSwipe = async (sessionId, movieId, direction, participants) => 
     });
     return response.json();
 };
+
+export const continueSession = async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/continue`, {
+        method: 'POST',
+        headers: getHeaders(),
+    });
+    return response.json();
+};
+
+export const endSession = async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/end`, {
+        method: 'POST',
+        headers: getHeaders(),
+    });
+    return response.json();
+};

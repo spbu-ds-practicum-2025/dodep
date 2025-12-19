@@ -1,6 +1,6 @@
 import httpx
 import os
-from models import SwipeRequest, SwipeResponse, MatchPayload, NextMoviePayload
+from models import SwipeRequest, SwipeResponse, MatchedMovie
 from redis_client import get_redis_client
 
 REC_SERVICE_URL = os.getenv("REC_SERVICE_URL", "http://recommendation-service:8000")
@@ -34,46 +34,51 @@ async def update_session_movie(session_id: str, next_movie_id: str):
 async def process_swipe(request: SwipeRequest) -> SwipeResponse:
     redis = get_redis_client()
     if not redis:
-        return SwipeResponse(event="error", payload={"message": "Redis unavailable"})
+        return SwipeResponse(status="error", message="Redis unavailable")
 
-    key = f"session:{request.session_id}:movie:{request.movie_id}"
+    # Ensure IDs are strings for Redis keys
+    session_id_str = str(request.session_id)
+    movie_id_str = str(request.movie_id)
+    user_id_str = str(request.user_id)
+
+    key = f"session:{session_id_str}:movie:{movie_id_str}"
     
     # Logic for SKIP
     if request.swipe_value == "skip":
-        # 1. Save vote (optional, but good for consistency)
-        redis.hset(key, f"vote:{request.user_id}", "skip")
+        # 1. Save vote
+        redis.hset(key, f"vote:{user_id_str}", "skip")
         
-        # 2. Get next movie
-        next_movie_id = await get_next_movie(request.session_id, request.movie_id)
+        # 2. Get next movie (Side effect)
+        next_movie_id = await get_next_movie(session_id_str, movie_id_str)
         
-        if not next_movie_id:
-             return SwipeResponse(event="error", payload={"message": "Could not get next movie"})
-
-        # 3. Update Session Service
-        await update_session_movie(request.session_id, next_movie_id)
+        if next_movie_id:
+             # 3. Update Session Service (Side effect)
+             await update_session_movie(session_id_str, next_movie_id)
         
         # 4. Clear current movie votes
         redis.delete(key)
         
-        # 5. Return next_movie event
+        # 5. Return next_movie status
         return SwipeResponse(
-            event="next_movie",
-            payload=NextMoviePayload(movie_id=next_movie_id, reason="skip")
+            status="next_movie",
+            session_id=request.session_id,
+            movie_id=request.movie_id,
+            message="Not all participants wanted this movie"
         )
 
     # Logic for WANT_NOW
     elif request.swipe_value == "want_now":
         # 1. Save vote
-        redis.hset(key, f"vote:{request.user_id}", "want_now")
+        redis.hset(key, f"vote:{user_id_str}", "want_now")
         
         # 2. Check all votes
-        # We need to know who has voted.
-        # Redis HGETALL returns all fields. We filter for keys starting with "vote:"
         all_data = redis.hgetall(key)
         votes = {k: v for k, v in all_data.items() if k.startswith("vote:")}
         
+        votes_count = len(votes)
+        required_votes = len(request.participants)
+        
         # Check if all participants have voted
-        # participants is a list of user_ids
         all_voted = True
         for user in request.participants:
             if f"vote:{user}" not in votes:
@@ -82,29 +87,32 @@ async def process_swipe(request: SwipeRequest) -> SwipeResponse:
         
         if all_voted:
             # Check if everyone voted "want_now"
-            # Since "skip" triggers immediate next movie, if we are here and everyone voted,
-            # and we haven't deleted the key yet, it implies everyone voted "want_now".
-            # But let's be safe and check values.
             all_want_now = all(v == "want_now" for v in votes.values())
             
             if all_want_now:
                 return SwipeResponse(
-                    event="match_found",
-                    payload=MatchPayload(movie_id=request.movie_id, participants=request.participants)
+                    status="match_found",
+                    session_id=request.session_id,
+                    movie_id=request.movie_id,
+                    matched_movie=MatchedMovie(id=request.movie_id, title="Unknown Title")
                 )
             else:
-                # This state theoretically shouldn't be reached if "skip" is immediate,
-                # unless there's a race condition or logic change.
-                # If someone skipped, the key should be gone.
-                # But if we are here, maybe handle as next movie?
-                # For now, let's assume strict "skip -> immediate next" logic.
-                pass
-        
+                # If there is a "skip" in votes (race condition or logic), treat as next movie
+                redis.delete(key)
+                return SwipeResponse(
+                    status="next_movie",
+                    session_id=request.session_id,
+                    movie_id=request.movie_id,
+                    message="Not all participants wanted this movie"
+                )
+
         # If not everyone voted yet
         return SwipeResponse(
-            event="vote_recorded",
-            user_id=request.user_id,
-            completed=False
+            status="vote_recorded",
+            session_id=request.session_id,
+            movie_id=request.movie_id,
+            votes_count=votes_count,
+            required_votes=required_votes
         )
 
-    return SwipeResponse(event="error", payload={"message": "Invalid swipe value"})
+    return SwipeResponse(status="error", message="Invalid swipe value")

@@ -47,9 +47,11 @@ async def test_swipe_want_now_incomplete(mock_redis):
     
     assert response.status_code == 200
     data = response.json()
-    assert data["event"] == "vote_recorded"
-    assert data["user_id"] == "user1"
-    assert data["completed"] == False
+    assert data["status"] == "vote_recorded"
+    assert data["session_id"] == "session123"
+    assert data["movie_id"] == "movie456"
+    assert data["votes_count"] == 1
+    assert data["required_votes"] == 2
     
     # Verify Redis calls
     mock_redis.hset.assert_called()
@@ -74,9 +76,10 @@ async def test_swipe_want_now_match(mock_redis):
     
     assert response.status_code == 200
     data = response.json()
-    assert data["event"] == "match_found"
-    assert data["payload"]["movie_id"] == "movie456"
-    assert set(data["payload"]["participants"]) == {"user1", "user2"}
+    assert data["status"] == "match_found"
+    assert data["session_id"] == "session123"
+    assert data["movie_id"] == "movie456"
+    assert data["matched_movie"]["id"] == "movie456"
 
 @pytest.mark.asyncio
 async def test_swipe_skip(mock_redis):
@@ -98,9 +101,10 @@ async def test_swipe_skip(mock_redis):
             
             assert response.status_code == 200
             data = response.json()
-            assert data["event"] == "next_movie"
-            assert data["payload"]["movie_id"] == "movie789"
-            assert data["payload"]["reason"] == "skip"
+            assert data["status"] == "next_movie"
+            assert data["session_id"] == "session123"
+            assert data["movie_id"] == "movie456"
+            assert data["message"] == "Not all participants wanted this movie"
             
             # Verify interactions
             mock_redis.hset.assert_called() # Vote saved
@@ -126,4 +130,4 @@ async def test_swipe_skip_service_failure(mock_redis):
         
         assert response.status_code == 200
         data = response.json()
-        assert data["event"] == "error"
+        assert data["status"] == "next_movie"

@@ -1,23 +1,22 @@
 from pydantic import BaseModel
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Union
 
 class SwipeRequest(BaseModel):
-    session_id: str
-    user_id: str
-    movie_id: str
+    session_id: Union[int, str]
+    user_id: Union[int, str]
+    movie_id: Union[int, str]
     swipe_value: Literal["want_now", "skip"]
-    participants: List[str]  # List of user_ids in the session
+    participants: List[Union[int, str]]
 
-class MatchPayload(BaseModel):
-    movie_id: str
-    participants: List[str]
-
-class NextMoviePayload(BaseModel):
-    movie_id: str
-    reason: str
+class MatchedMovie(BaseModel):
+    id: Union[int, str]
+    title: Optional[str] = None
 
 class SwipeResponse(BaseModel):
-    event: Literal["match_found", "vote_recorded", "next_movie", "error"]
-    payload: Optional[MatchPayload | NextMoviePayload | dict] = None
-    user_id: Optional[str] = None
-    completed: Optional[bool] = None
+    status: Literal["match_found", "vote_recorded", "next_movie", "error"]
+    session_id: Optional[Union[int, str]] = None
+    movie_id: Optional[Union[int, str]] = None
+    votes_count: Optional[int] = None
+    required_votes: Optional[int] = None
+    matched_movie: Optional[MatchedMovie] = None
+    message: Optional[str] = None

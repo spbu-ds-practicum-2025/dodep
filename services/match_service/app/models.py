@@ -20,3 +20,9 @@ class SwipeResponse(BaseModel):
     required_votes: Optional[int] = None
     matched_movie: Optional[MatchedMovie] = None
     message: Optional[str] = None
+
+
+class CheckStatusRequest(BaseModel):
+    session_id: Union[int, str]
+    current_movie_id: Union[int, str]
+    participants: List[Union[int, str]]

@@ -30,7 +30,7 @@ function App() {
   return (
     <Router>
       <div className="user-id-container">
-        <label htmlFor="user-id-input">User ID: </label>
+        <label htmlFor="user-id-input">User name: </label>
         <input 
           id="user-id-input"
           type="text" 

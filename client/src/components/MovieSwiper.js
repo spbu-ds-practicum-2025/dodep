@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMovies, sendSwipe, getSession, continueSession, endSession } from '../services/api';
+import { fetchMovies, sendSwipe, getSession, continueSession, endSession, notifyVote, updateCurrentMovie } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import MatchModal from './MatchModal';
 
@@ -21,6 +21,12 @@ const MovieSwiper = ({ sessionData }) => {
                 if (movieList && movieList.length > 0) {
                     // Default to first movie if no current_movie_id yet
                     setCurrentMovie(movieList[0]);
+                    
+                    // Initialize session current movie if not set
+                    const session = await getSession(sessionData.sessionId);
+                    if (!session.current_movie_id) {
+                        await updateCurrentMovie(sessionData.sessionId, movieList[0].id);
+                    }
                 }
             } catch (error) {
                 console.error("Failed to load movies", error);
@@ -94,6 +100,8 @@ const MovieSwiper = ({ sessionData }) => {
                 direction,
                 sessionData.participants
             );
+            
+            await notifyVote(sessionData.sessionId, currentMovie.id);
 
             console.log("Swipe response:", response);
 

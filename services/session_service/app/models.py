@@ -36,6 +36,7 @@ class SessionUser(Base):
     user_id = Column(String, index=True)
     joined_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+    has_voted = Column(Boolean, default=False)
     last_seen = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationship

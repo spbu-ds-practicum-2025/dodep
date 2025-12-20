@@ -11,11 +11,17 @@ class SessionUserCreate(SessionUserBase):
     pass
 
 
+class VoteRequest(BaseModel):
+    user_id: str
+    movie_id: int
+
+
 class SessionUser(SessionUserBase):
     id: int
     session_id: int
     joined_at: datetime
     is_active: bool
+    has_voted: bool
     last_seen: datetime
 
     class Config:

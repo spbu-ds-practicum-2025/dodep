@@ -43,6 +43,8 @@ services:
 
   session-service:
     build: ./services/session_service
+    volumes:
+      - ./services/session_service/app:/app/app
     # ports:
     #   - "8001:8001"
     environment:
@@ -56,6 +58,8 @@ services:
 
   match-service:
     build: ./services/match_service
+    volumes:
+      - ./services/match_service/app:/app/app
     # ports:
     #   - "8000:8000"
     environment:
@@ -70,6 +74,8 @@ services:
 
   recommendation-service:
     build: ./services/recommendation
+    volumes:
+      - ./services/recommendation/app:/app/app
     # ports:
     #   - "8002:8002"
     environment:

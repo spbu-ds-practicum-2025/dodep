@@ -1,13 +1,16 @@
-from fastapi import FastAPI, Depends, HTTPException, Query, Header
+from fastapi import FastAPI, Depends, HTTPException, Query, Header, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
 import string
 import random
+import httpx
 from datetime import datetime, timedelta
 from . import models, schemas, database
 
 app = FastAPI(title="Session Service")
+
+MATCH_SERVICE_URL = os.getenv("MATCH_SERVICE_URL", "http://match-service:8000")
 
 # Create tables
 models.Base.metadata.create_all(bind=database.engine)
@@ -123,6 +126,40 @@ async def join_session(request: schemas.SessionJoin, db: Session = Depends(get_d
     )
 
 
+@app.post("/sessions/{session_code}/vote")
+async def user_voted(session_code: str, request: schemas.VoteRequest, db: Session = Depends(get_db)):
+    """
+    Mark user as having voted (waiting status)
+    """
+    db_session = db.query(models.Session).filter(
+        models.Session.code == session_code
+    ).first()
+    
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    # Only mark as voted if the movie matches the current session movie
+    # This prevents race conditions where a vote for a previous movie marks the user as voted for the new one
+    if db_session.current_movie_id != request.movie_id:
+        # Just ignore, or return a warning?
+        # Returning ok is fine, as the user is technically active, but we don't want to set has_voted=True for the new movie
+        return {"status": "ignored", "reason": "movie_mismatch"}
+        
+    db_user = db.query(models.SessionUser).filter(
+        models.SessionUser.session_id == db_session.id,
+        models.SessionUser.user_id == request.user_id
+    ).first()
+    
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found in session")
+        
+    db_user.has_voted = True
+    db_user.last_seen = datetime.utcnow()
+    db.commit()
+    
+    return {"status": "ok"}
+
+
 @app.get("/sessions/{session_code}/validate", response_model=schemas.ValidateSessionResponse)
 async def validate_session(session_code: str, db: Session = Depends(get_db)):
     """
@@ -150,15 +187,31 @@ async def validate_session(session_code: str, db: Session = Depends(get_db)):
     )
 
 
+async def notify_match_service_check(session_id: str, current_movie_id: int, participants: List[str]):
+    """
+    Notify Match Service to check if the session can proceed with the new participant list
+    """
+    async with httpx.AsyncClient() as client:
+        try:
+            await client.post(
+                f"{MATCH_SERVICE_URL}/matches/check_status",
+                json={
+                    "session_id": session_id,
+                    "current_movie_id": current_movie_id,
+                    "participants": participants
+                }
+            )
+        except Exception as e:
+            print(f"Error notifying match service: {e}")
+
+
 @app.get("/sessions/{session_code}", response_model=schemas.SessionResponse)
 async def get_session(
     session_code: str, 
-    user_id: Optional[str] = Header(None), 
     db: Session = Depends(get_db)
 ):
     """
-    Get session details by code
-    Also updates last_seen for the calling user and checks for timeouts
+    Get session details by code (Read-only)
     """
     db_session = db.query(models.Session).filter(
         models.Session.code == session_code
@@ -167,25 +220,85 @@ async def get_session(
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    return schemas.SessionResponse(
+        session_id=db_session.id,
+        session_code=db_session.code,
+        creator_id=db_session.creator_id,
+        status=db_session.status,
+        current_movie_id=db_session.current_movie_id,
+        match_movie_id=db_session.match_movie_id,
+        participants=[u.user_id for u in db_session.users if u.is_active],
+        created_at=db_session.created_at
+    )
+
+
+@app.post("/sessions/{session_code}", response_model=schemas.SessionResponse)
+async def session_heartbeat(
+    session_code: str, 
+    background_tasks: BackgroundTasks,
+    user_id: Optional[str] = Header(None, alias="user_id"), 
+    db: Session = Depends(get_db)
+):
+    """
+    Heartbeat: Update last_seen and check for timeouts
+    """
+    # Find session by code with lock to prevent race conditions
+    db_session = db.query(models.Session).filter(
+        models.Session.code == session_code
+    ).with_for_update().first()
+    
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
     # Update last_seen for current user
-    if user_id:
+    if user_id is not None:
         current_user = next((u for u in db_session.users if u.user_id == user_id), None)
         if current_user:
+            # print(f"Updating last_seen for user {user_id}")
             current_user.last_seen = datetime.utcnow()
             current_user.is_active = True
+        else:
+            print(f"User {user_id} not found in session {session_code}. Users: {[u.user_id for u in db_session.users]}")
+    else:
+        print(f"No user_id header provided for session {session_code}")
     
     # Check for timeouts (40 seconds)
     timeout_threshold = datetime.utcnow() - timedelta(seconds=40)
     users_changed = False
     
+    # print(f"Checking timeouts. Threshold: {timeout_threshold}")
     for user in db_session.users:
+        # print(f"User {user.user_id}: active={user.is_active}, last_seen={user.last_seen}")
         if user.is_active and user.last_seen and user.last_seen < timeout_threshold:
+            print(f"Kicking user {user.user_id} (last_seen: {user.last_seen})")
             user.is_active = False
             users_changed = True
+            
+            # If the kicked user was the creator, assign a new creator
+            if user.user_id == db_session.creator_id:
+                # Find another active user
+                new_creator = next((u for u in db_session.users if u.is_active and u.user_id != user.user_id), None)
+                if new_creator:
+                    db_session.creator_id = new_creator.user_id
+                    print(f"Creator changed from {user.user_id} to {new_creator.user_id}")
+                else:
+                    # No active users left, maybe abandon session?
+                    # For now, just leave it, or set status to ABANDONED
+                    pass
             
     if user_id or users_changed:
         db.commit()
         db.refresh(db_session)
+        
+    if users_changed and db_session.current_movie_id:
+        # Notify Match Service to re-evaluate votes with new participant list
+        active_participants = [u.user_id for u in db_session.users if u.is_active]
+        background_tasks.add_task(
+            notify_match_service_check, 
+            db_session.code, 
+            db_session.current_movie_id, 
+            active_participants
+        )
     
     return schemas.SessionResponse(
         session_id=db_session.id,
@@ -218,6 +331,11 @@ async def update_current_movie(
     
     db_session.current_movie_id = request.current_movie_id
     db_session.updated_at = datetime.utcnow()
+    
+    # Reset has_voted for all users
+    for user in db_session.users:
+        user.has_voted = False
+        
     db.commit()
     db.refresh(db_session)
     

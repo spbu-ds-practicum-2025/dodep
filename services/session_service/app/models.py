@@ -20,6 +20,7 @@ class Session(Base):
     creator_id = Column(String)
     status = Column(Enum(SessionStatus), default=SessionStatus.ACTIVE)
     current_movie_id = Column(Integer, default=None)
+    match_movie_id = Column(Integer, default=None)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -35,6 +36,7 @@ class SessionUser(Base):
     user_id = Column(String, index=True)
     joined_at = Column(DateTime, default=datetime.utcnow)
     is_active = Column(Boolean, default=True)
+    has_voted = Column(Boolean, default=False)
     last_seen = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationship
